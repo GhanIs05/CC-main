@@ -121,7 +121,7 @@ const Chat = () => {
       ) : (
         <>
           <div className="bg-cyan-600 text-white p-4 font-bold flex justify-between items-center w-full">
-            <span>WhatsApp Clone</span>
+            <span>Chat App</span>
             <button onClick={handleSignOut} className="bg-red-500 px-3 py-1 rounded">Sign Out</button>
           </div>
           <div className="flex flex-1 h-full">
@@ -143,7 +143,7 @@ const Chat = () => {
               </div>
               <div className="flex-1 overflow-y-auto p-4 bg-cyan-50">
                 {messages.map((msg) => (
-                  <div key={msg.id} className={`flex flex-col ${msg.senderId === currentUser?.uid ? "items-end" : "items-start"}`}>
+                  <div key={msg.id} className={`flex flex-col ${msg.senderId === currentUser?.uid ? "items-end" : "items-start"} mb-4`}>
                     <div className={`max-w-xs p-3 rounded-xl text-sm shadow-md ${msg.senderId === currentUser?.uid ? "bg-green-400 text-white" : "bg-gray-300 text-black"}`}>
                       <p>{msg.text}</p>
                       <span className="text-xs text-gray-700 block mt-1">{msg.createdAt?.toDate().toLocaleTimeString()}</span>
