@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { auth, db } from "./firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, getDocs, serverTimestamp, doc, setDoc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, setDoc, updateDoc, getDocs } from "firebase/firestore"; // Added setDoc import
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 
-const Chat = () => {
+const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const messagesEndRef = useRef(null);
@@ -13,6 +13,8 @@ const Chat = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [isTyping, setIsTyping] = useState(false); // Track if user is typing
+  const [otherUserTyping, setOtherUserTyping] = useState(false); // Track if the other user is typing
 
   // Handle sign-in and registration flow
   const handleRegister = async () => {
@@ -72,10 +74,43 @@ const Chat = () => {
     return () => unsubscribe();
   }, [selectedUser, currentUser]);
 
+  // Fetch typing status for the other user
+  useEffect(() => {
+    if (!selectedUser || !currentUser) return;
+    const chatId = [currentUser.uid, selectedUser.id].sort().join("_");
+    const typingRef = doc(db, "typing", chatId); // Corrected to point to a document in 'typing' collection
+    const unsubscribe = onSnapshot(typingRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setOtherUserTyping(docSnap.data().typing);
+      }
+    });
+    return () => unsubscribe();
+  }, [selectedUser, currentUser]);
+
+  // Scroll to the bottom of the chat when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Handle typing status
+  const handleTyping = async () => {
+    if (!selectedUser || !currentUser) return;
+    const chatId = [currentUser.uid, selectedUser.id].sort().join("_");
+
+    // Set typing status to true
+    await setDoc(doc(db, "typing", chatId), {
+      typing: true,
+    }, { merge: true });
+
+    setTimeout(async () => {
+      // Reset typing status after 2 seconds of inactivity
+      await setDoc(doc(db, "typing", chatId), {
+        typing: false,
+      }, { merge: true });
+    }, 2000); 
+  };
+
+  // Handle sending a new message
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedUser) return;
@@ -86,8 +121,24 @@ const Chat = () => {
       senderId: currentUser?.uid,
       receiverId: selectedUser.id,
       displayName: currentUser?.displayName || currentUser?.email, // Store displayName in message
+      read: false, // Mark new message as unread
     });
     setNewMessage("");
+    // Reset typing status when a message is sent
+    const typingRef = doc(db, "typing", chatId);
+    await setDoc(typingRef, {
+      typing: false,
+    });
+  };
+
+  // Mark message as read (only for receiver)
+  const markMessageAsRead = async (messageId) => {
+    if (currentUser?.uid === selectedUser.id) return; // Don't mark if the current user is the sender
+    const chatId = [currentUser.uid, selectedUser.id].sort().join("_");
+    const messageRef = doc(db, "messages", chatId, "messages", messageId);
+    await updateDoc(messageRef, {
+      read: true, // Update message as read
+    });
   };
 
   return (
@@ -140,6 +191,7 @@ const Chat = () => {
                 {selectedUser && (
                   <div className="text-lg font-bold">{selectedUser.displayName || selectedUser.email}</div>
                 )}
+                {otherUserTyping && <div className="italic text-gray-500">The other person is typing...</div>}
               </div>
               <div className="flex-1 overflow-y-auto p-4 bg-cyan-50">
                 {messages.map((msg) => (
@@ -147,7 +199,16 @@ const Chat = () => {
                     <div className={`max-w-xs p-3 rounded-xl text-sm shadow-md ${msg.senderId === currentUser?.uid ? "bg-green-400 text-white" : "bg-gray-300 text-black"}`}>
                       <p>{msg.text}</p>
                       <span className="text-xs text-gray-700 block mt-1">{msg.createdAt?.toDate().toLocaleTimeString()}</span>
+                      {msg.read ? (
+                        <span className="text-xs text-green-500">✓</span>
+                      ) : (
+                        <span className="text-xs text-gray-500">⧫</span>
+                      )}
                     </div>
+                    {/* Add click listener to mark message as read */}
+                    {msg.senderId !== currentUser?.uid && (
+                      <button onClick={() => markMessageAsRead(msg.id)} className="text-xs text-blue-500">Mark as Read</button>
+                    )}
                   </div>
                 ))}
                 <div ref={messagesEndRef}></div>
@@ -158,16 +219,13 @@ const Chat = () => {
                   className="flex-1 p-2 border rounded-full"
                   placeholder="Type a message..."
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  disabled={!selectedUser}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    setIsTyping(e.target.value.trim() !== ""); // Set typing status based on input
+                  }}
+                  onKeyUp={handleTyping}
                 />
-                <button
-                  type="submit"
-                  className="ml-2 bg-green-500 text-white px-4 py-2 rounded-full"
-                  disabled={!selectedUser}
-                >
-                  Send
-                </button>
+                <button type="submit" className="ml-2 bg-blue-500 text-white p-2 rounded-full">Send</button>
               </form>
             </div>
           </div>
@@ -177,4 +235,4 @@ const Chat = () => {
   );
 };
 
-export default Chat;
+export default ChatRoom;
